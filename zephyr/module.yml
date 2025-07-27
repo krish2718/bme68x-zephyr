@@ -55,6 +55,15 @@ blobs:
     description: "BSEC library for Cortex-M4F"
     doc-url: https://github.com/boschsensortec/Bosch-BSEC2-Library
     url: https://github.com/boschsensortec/Bosch-BSEC2-Library/raw/v1.7.2502/src/cortex-m4/fpv4-sp-d16-hard/libalgobsec.a
+  # Cortex-M7 (local copy from website, below entry is a hack)
+  - path: bsec/cortex-m7/libalgobsec.a
+    sha256: fa5fe69e89c75c23975d104aa061ddcc36b72b31a570fbeca9bceed0895cb998
+    type: lib
+    version: "6.1.0"
+    license-path: license_terms_bme688_bme680_bsec.pdf
+    description: "BSEC library for Cortex-M7 (local blob from BSEC2 6.1.0)"
+    doc-url: https://github.com/boschsensortec/Bosch-BSEC2-Library
+    url: https://github.com/boschsensortec/Bosch-BSEC2-Library/raw/v1.7.2502/src/cortex-m4/libalgobsec.a
   # ESP32
   - path: bsec/esp32/libalgobsec.a
     sha256: 10a1438a6696e02201a4de11bbfbe90263886ad0ff03923bca56c41b40bd1b2a

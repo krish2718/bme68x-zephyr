@@ -39,6 +39,9 @@ function(set_bsec_target_cortex)
     else()
       set(bsec_target "cortex-m4" PARENT_SCOPE)
     endif(CONFIG_FPU)
+  # Cortex-M7
+  elseif(CONFIG_CPU_CORTEX_M7)
+    set(bsec_target "cortex-m7" PARENT_SCOPE)
   endif()
 endfunction()
 

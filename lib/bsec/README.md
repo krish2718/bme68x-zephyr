@@ -56,6 +56,8 @@ blobs
     │   └── libalgobsec.a
     ├── cortex-m4f
     │   └── libalgobsec.a
+    ├── cortex-m7
+    │   └── libalgobsec.a
     ├── esp32
     │   └── libalgobsec.a
     ├── esp32c3
@@ -75,6 +77,7 @@ Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bse
 Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m33f/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m4/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m4f/libalgobsec.a
+Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m7/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/esp32/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/esp32s2/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bsec/esp32s3/libalgobsec.a
@@ -84,12 +87,13 @@ Fetching blob bme68x: /path/to/zephyrproject/modules/lib/bme68x/zephyr/blobs/bse
 Otherwise, manually copy the needed BSEC binaries to their expected locations.
 
 > [!NOTE]
-> The `f` suffix in `cortex-m33f` and `cortex-m4f` identify targets for hardware floating-point ABI:
+> The `f` suffix in `cortex-m33f`, `cortex-m4f`, `cortex-m7f` identify targets for hardware floating-point ABI:
 >
 > | Target        | ABI                              |
 > |---------------|----------------------------------|
 > | `cortex-m33f` | `-mfpv5-sp-d16 -mfloat-abi=hard` |
 > | `cortex-m4f`  | `-mfpv4-sp-d16 -mfloat-abi=hard` |
+> | `cortex-m7f`  | `-mfpv5-sp-d16 -mfloat-abi=hard` |
 
 [bme68x-zephyr]: https://github.com/dottspina/bme68x-zephyr
 [binary blobs]: https://docs.zephyrproject.org/latest/contribute/bin_blobs.html
@@ -112,65 +116,10 @@ By default, the build process ([CMakeLists.txt](CMakeLists.txt)) will try to ide
 | cortex-m33f |                          | `CPU_CORTEX_M33=y`, `FPU=y` |
 | cortex-m4   |                          | `CPU_CORTEX_M4=y`           |
 | cortex-m4f  |                          | `CPU_CORTEX_M4=y`, `FPU=y`  |
+| cortex-m7   |                          | `CPU_CORTEX_M7=y`           |
+| cortex-m7f  |                          | `CPU_CORTEX_M7=y`, `FPU=y`  |
+| cortex-a7   |                          | `CPU_CORTEX_A7=y`           |
 | esp32       | `SOC_FAMILY_ESP32=y`     | `SOC_SERIES_ESP32="y"`      |
 | esp32s2     |                          | `SOC_SERIES_ESP32S2="y"`    |
 | esp32s3     |                          | `SOC_SERIES_ESP32S3="y"`    |
 | esp32c3     |                          | `SOC_SERIES_ESP32C3="y"`    |
-
-If the above fails or is not applicable, the build process also supports the CMake variable `LIBALGOBSEC` which allows to explicitly set the path to the target BSEC blob, e.g.:
-
-```
-$ west build /path/to/zephyr/application -- -DLIBALGOBSEC=/path/to/libalgobsec.a
-```
-
-The BSEC library is exposed as a Zephyr *interface library* named `bsec`.
-
-To link another Zephyr library with BSEC:
-
-``` cmake
-zephyr_library()
-zephyr_library_link_libraries(bsec)
-```
-
-To link an application with BSEC, the Kconfig symbol `APP_LINK_WITH_BSEC` should be defined: this is automatic when this library is enabled.
-
-See also:
-
-- CMake [Interface Libraries]
-- the `zephyr_interface_library_named()` function in [zephyr/cmake/modules/extensions.cmake]
-
-[Interface Libraries]: https://cmake.org/cmake/help/v3.20/command/add_library.html#interface-libraries
-[zephyr/cmake/modules/extensions.cmake]: https://github.com/zephyrproject-rtos/zephyr/blob/main/cmake/modules/extensions.cmake
-
-### API
-
-Enabling this Zephyr library makes the BSEC API header files directly accessible by application code.
-
-| Header                       | API                                                |
-|------------------------------|----------------------------------------------------|
-| [`bsec_datatypes.h`]       | Data types and defines used by interface functions |
-| [`bsec_interface.h`]       | Declaration of standard interface functions        |
-| [`bsec_interface_multi.h`] | Declaration of multi-interface functions           |
-
-[`bsec_datatypes.h`]: include/bsec_datatypes.h
-[`bsec_interface.h`]: include/bsec_interface.h
-[`bsec_interface_multi.h`]: include/bsec_interface_multi.h
-
-> [!IMPORTANT]
->
-> The BSEC library works with state data in the `bss` section, which by default is not accessible to [User Mode] threads, causing MPU faults:
->
-> ```
-> [00:00:00.257,476] <inf> bme68x_sensor_api: bme680@77 (Fixed-point API)
-> [00:00:00.274,505] <err> os: ***** MPU FAULT *****
-> [00:00:00.274,505] <err> os:   Data Access Violation
-> [00:00:00.274,505] <err> os:   MMFAR Address: 0x20000f20
-> ```
->
-> ```
-> (gdb) i symbol 0x20000f20
-> bsec_library in section bss
-> ```
-
-[User Mode]: https://docs.zephyrproject.org/latest/kernel/usermode/index.html
-[Memory Domains]: https://docs.zephyrproject.org/latest/kernel/usermode/memory_domain.html#memory-domains

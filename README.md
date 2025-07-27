@@ -253,6 +253,7 @@ Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bs
 Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m33f/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m4/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m4f/libalgobsec.a
+Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/cortex-m7/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/esp32/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/esp32s2/libalgobsec.a
 Fetching blob bme68x: /path/to/zephyr-project/modules/lib/bme68x/zephyr/blobs/bsec/esp32s3/libalgobsec.a
@@ -304,7 +305,7 @@ These options are accessible via the Kconfig menu: `Modules → bme68x → [*] S
 
 The application should build and run *out of the box* for the target CPU families bellow:
 
-- Cortex-M: M33, M33F, M4, M4F
+- Cortex-M: M33, M33F, M4, M4F, M7, M7F
 - ESP32: ESP32, ESP32S2, ESP32S3, ESP32C3
 
 ```
