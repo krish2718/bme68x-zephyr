@@ -1,0 +1,20 @@
+/*
+ * ===================================================================
+ * nucleo_f767zi.overlay - I2C Configuration for BME680
+ * ===================================================================
+ * This overlay enables I2C1 for the BME680 sensor on the Nucleo-F767ZI board.
+ */
+
+/* Enable I2C1 for BME680 */
+&i2c1 {
+    status = "okay";
+    clock-frequency = <100000>; /* 100 kHz */
+    pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
+    pinctrl-names = "default";
+
+    bme680: bme680@77 {
+        compatible = "bosch,bme680";
+        reg = <0x77>;
+        label = "BME680";
+    };
+};
