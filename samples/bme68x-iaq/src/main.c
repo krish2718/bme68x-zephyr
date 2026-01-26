@@ -1,179 +1,168 @@
 /*
- * Copyright (c) 2024, Chris Duf
- *
- * SPDX-License-Identifier: Apache-2.0
- *
- * Index for Air Quality (IAQ) with BSEC and the BME68X Sensor API.
+ * ----------------------------------------------------
+ *  main.c - Zephyr RTOS Multi-Sensor Application
+ * ----------------------------------------------------
+ * This application performs a one-time I2C bus scan on startup,
+ * then enters a continuous monitoring loop for five environmental
+ * sensors.
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/sys/printk.h>
+#include <stdbool.h> // For the 'bool' type
 
-#ifdef CONFIG_BME68X_IAQ_SETTINGS
-#include <zephyr/settings/settings.h>
-#endif
+/* Required for the SGP40's external processing algorithm */
+#include "gas_index_algorithm.h"
 
-#include <drivers/bme68x_sensor_api.h>
+/* --- I2C Scanner Functions --- */
 
-#include "bme68x.h"
-
-#include "bme68x_iaq.h"
-
-LOG_MODULE_REGISTER(app, CONFIG_BME68X_SAMPLE_LOG_LEVEL);
-
-/*
- * We'll print only integer values to not impose additional configuration
- * for supporting floats in format string specifiers.
- */
-struct fixed_point {
-	/* Integer part. */
-	int32_t q;
-	/* Fractional digits (variable precision). */
-	uint32_t r;
-};
-struct iaq_output {
-	/*
-	 * Temperature measured by BME680/688 in degree Celsius.
-	 * Precision 1/100 degC (2-digits remainder).
-	 */
-	struct fixed_point raw_temperature;
-	/*
-	 * Pressure measured by the BME680/688 in kPa.
-	 * Precision 1 Pa (3-digits remainder).
-	 */
-	struct fixed_point raw_pressure;
-	/*
-	 * Relative directly measured by the BME680/688 in %.
-	 * Precision 1/100 percent (2-digits remainder).
-	 */
-	struct fixed_point raw_humidity;
-	/*
-	 * Gas resistance measured by the BME680/688 in kOhm.
-	 * Precision 1 Ohm (3-digits remainder).
-	 */
-	struct fixed_point raw_gas_res;
-	/*
-	 * Sensor heat compensated temperature in degrees Celsius.
-	 * Precision 1/100 degC (2-digits remainder).
-	 */
-	struct fixed_point temperature;
-	/*
-	 * Sensor heat compensated relative humidity in %.
-	 * Precision 1/100 percent (2-digits remainder).
-	 */
-	struct fixed_point humidity;
-	/* Scaled IAQ [0,500]. */
-	uint16_t iaq;
-	enum bme68x_iaq_accuracy iaq_accuracy;
-	/* CO2 equivalent estimate in ppm. */
-	uint32_t co2_equivalent;
-	enum bme68x_iaq_accuracy co2_accuracy;
-	/*
-	 * VOC estimate in ppm.
-	 * Precision 1/100 ppm (2-digits remainder).
-	 */
-	struct fixed_point voc_equivalent;
-	enum bme68x_iaq_accuracy voc_accuracy;
-	enum bme68x_iaq_status stab_status;
-	enum bme68x_iaq_status run_status;
-};
-
-/* Log IAQ samples. */
-static void iaq_output_handler(struct bme68x_iaq_sample const *iaq_sample);
-
-int main(void)
+const char *get_sensor_name(uint8_t addr)
 {
-	/* Any compatible device will be fine. */
-	struct device const *const dev = DEVICE_DT_GET_ONE(bosch_bme68x_sensor_api);
-
-	struct bme68x_dev bme68x_dev = {0};
-	int ret = bme68x_sensor_api_init(dev, &bme68x_dev);
-	if (!ret) {
-		ret = bme68x_init(&bme68x_dev);
+	/* Maps known I2C addresses to human-readable names */
+	switch (addr) {
+	case 0x29: return "TSL2591 - Light Sensor";
+	case 0x39: return "APDS9960 - Proximity/Light/Color";
+	case 0x40: return "HTU21D - Temp/Humidity";
+	case 0x59: return "SGP40 - VOC Gas Sensor";
+	case 0x62: return "SCD4x - CO2 Sensor";
+	case 0x77: return "BME68x - Temp/Hum/Pres/Gas";
+	default: return "Unknown Device";
 	}
-	if (ret) {
-		LOG_ERR("sensor initialization failed: %d", ret);
-		goto sleep_forever;
-	}
-
-#ifdef CONFIG_BME68X_IAQ_SETTINGS
-	/* Shall be initialized before the bme68x_iaq library. */
-	settings_subsys_init();
-#endif
-
-	ret = bme68x_iaq_init();
-	if (ret) {
-		LOG_ERR("IAQ initialization failed: %d", ret);
-		goto sleep_forever;
-	}
-
-	/* Enter BSEC control loop. */
-	bme68x_iaq_run(&bme68x_dev, iaq_output_handler);
-
-sleep_forever:
-	k_sleep(K_FOREVER);
-	return 0;
 }
 
-static inline void fixed_point_init(float x, unsigned int precision,
-				    struct fixed_point *fixed_point)
+void run_i2c_scanner(void)
 {
-	fixed_point->q = (x / precision) * precision;
-	fixed_point->r = (x - fixed_point->q) * precision * (fixed_point->q < 0 ? -1 : 1);
+	const struct device *i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+	if (!device_is_ready(i2c_dev)) {
+		printk("  [ERROR] I2C bus is not ready for scanning.\n");
+		return;
+	}
+
+	printk("\n--- Performing 1-time I2C Bus Scan ---\n");
+	uint8_t found_count = 0;
+	for (uint8_t addr = 1; addr <= 127; addr++) {
+		struct i2c_msg msg;
+		uint8_t dummy_buf;
+		msg.buf = &dummy_buf;
+		msg.len = 0;
+		msg.flags = I2C_MSG_WRITE | I2C_MSG_STOP;
+
+		if (i2c_transfer(i2c_dev, &msg, 1, addr) == 0) {
+			printk("  [OK] Found device at 0x%02X: %s\n", addr, get_sensor_name(addr));
+			found_count++;
+		}
+	}
+	printk("--- Scan complete. Found %d devices. ---\n", found_count);
 }
 
-static void iaq_output_init(struct bme68x_iaq_sample const *iaq_sample,
-			    struct iaq_output *iaq_output)
+
+/* --- Multi-Sensor Application Logic --- */
+
+/* Device Handles from Devicetree */
+const struct device *const tsl2591_dev = DEVICE_DT_GET(DT_NODELABEL(tsl2591_dev));
+const struct device *const apds9960_dev = DEVICE_DT_GET(DT_NODELABEL(apds9960_dev));
+const struct device *const htu21d_dev = DEVICE_DT_GET(DT_NODELABEL(htu21d_dev));
+const struct device *const sgp40_dev = DEVICE_DT_GET(DT_NODELABEL(sgp40_dev));
+const struct device *const scd4x_dev = DEVICE_DT_GET(DT_NODELABEL(scd4x_dev));
+
+/* Global state for the SGP40's algorithm */
+static GasIndexAlgorithmParams gas_index_params;
+
+void main(void)
 {
-	/* degC to degC, centidegrees precision. */
-	fixed_point_init(iaq_sample->raw_temperature, 100, &iaq_output->raw_temperature);
-	fixed_point_init(iaq_sample->temperature, 100, &iaq_output->temperature);
-	/* Pa to kPa, Pa precision */
-	fixed_point_init(iaq_sample->raw_pressure / 1000, 1000, &iaq_output->raw_pressure);
-	/* percent to percent, centipercent precision. */
-	fixed_point_init(iaq_sample->raw_humidity, 100, &iaq_output->raw_humidity);
-	fixed_point_init(iaq_sample->humidity, 100, &iaq_output->humidity);
-	/* Ohm to kOhm, Ohm precision. */
-	fixed_point_init(iaq_sample->raw_gas_res / 1000, 1000, &iaq_output->raw_gas_res);
-	/* IAQ scaled to [0,500]. */
-	iaq_output->iaq = (uint16_t)iaq_sample->iaq;
-	iaq_output->iaq_accuracy = iaq_sample->iaq_accuracy;
-	/* ppm (death comes at 250000 ppm). */
-	iaq_output->co2_equivalent = (uint32_t)iaq_sample->co2_equivalent;
-	iaq_output->co2_accuracy = iaq_sample->co2_accuracy;
-	/* ppm, 1/100 ppm precision. */
-	fixed_point_init(iaq_sample->voc_equivalent, 100, &iaq_output->voc_equivalent);
-	iaq_output->voc_accuracy = iaq_sample->voc_accuracy;
-	iaq_output->stab_status = iaq_sample->stab_status;
-	iaq_output->run_status = iaq_sample->run_status;
-}
+	printk("\n\n*** Zephyr Multi-Sensor Environmental Node Initializing ***\n");
 
-void iaq_output_handler(struct bme68x_iaq_sample const *iaq_sample)
-{
-	static char const *accuracy2str[] = {
-		[BME68X_IAQ_ACCURACY_UNRELIABLE] = "unreliable",
-		[BME68X_IAQ_ACCURACY_LOW] = "low accuracy",
-		[BME68X_IAQ_ACCURACY_MEDIUM] = "medium accuracy",
-		[BME68X_IAQ_ACCURACY_HIGH] = "high accuracy",
-	};
-	static char const *stab2str[] = {
-		[BME68X_IAQ_STAB_ONGOING] = "on-going",
-		[BME68X_IAQ_STAB_FINISHED] = "finished",
-	};
+	/* --- Phase 1: Scan the I2C Bus --- */
+	run_i2c_scanner();
 
-	struct iaq_output iaq_output;
-	iaq_output_init(iaq_sample, &iaq_output);
+	/* --- Phase 2: Check Sensor API readiness --- */
+	if (!device_is_ready(tsl2591_dev) || !device_is_ready(apds9960_dev) ||
+	    !device_is_ready(htu21d_dev) || !device_is_ready(sgp40_dev) ||
+	    !device_is_ready(scd4x_dev)) {
+		printk("  [ERROR] One or more sensor drivers failed to initialize. Halting.\n");
+		return;
+	}
+	printk("  [OK] All 5 sensor drivers are ready.\n");
 
-	LOG_INF("-- IAQ output signals (%d) --", iaq_sample->cnt_outputs);
-	LOG_INF("T:%d.%02u degC", iaq_output.raw_temperature.q, iaq_output.raw_temperature.r);
-	LOG_INF("P:%d.%03u kPa", iaq_output.raw_pressure.q, iaq_output.raw_pressure.r);
-	LOG_INF("H:%d.%02u %%", iaq_output.raw_humidity.q, iaq_output.raw_humidity.r);
-	LOG_INF("G:%d.%03u kOhm", iaq_output.raw_gas_res.q, iaq_output.raw_gas_res.r);
-	LOG_INF("IAQ:%u (%s)", iaq_output.iaq, accuracy2str[iaq_output.iaq_accuracy]);
-	LOG_INF("CO2:%u ppm (%s)", iaq_output.co2_equivalent,
-		accuracy2str[iaq_output.co2_accuracy]);
-	LOG_INF("VOC:%d.%02u ppm (%s)", iaq_output.voc_equivalent.q, iaq_output.voc_equivalent.r,
-		accuracy2str[iaq_output.voc_accuracy]);
-	LOG_INF("stabilization: %s, %s", stab2str[iaq_output.stab_status],
-		stab2str[iaq_output.run_status]);
+	GasIndexAlgorithm_init(&gas_index_params, GasIndexAlgorithm_ALGORITHM_TYPE_VOC);
+	printk("  [OK] SGP40 Gas Index Algorithm initialized.\n");
+	
+	printk("\n--- Starting Main Measurement Loop ---\n");
+	printk("SGP40 sampling at 1Hz | Full report every 10 seconds\n");
+	k_sleep(K_SECONDS(2));
+
+	int loop_counter = 0;
+	bool sgp40_is_stable = false; /* SGP40 stability flag */
+
+	while (1) {
+		/* --- SGP40: Sample every 1 second for algorithm stability --- */
+		struct sensor_value raw_voc;
+		int32_t voc_index;
+		sensor_sample_fetch(sgp40_dev);
+		sensor_channel_get(sgp40_dev, SENSOR_CHAN_GAS_RES, &raw_voc);
+		GasIndexAlgorithm_process(&gas_index_params, raw_voc.val1, &voc_index);
+
+		/* New, intelligent stability check */
+		if (!sgp40_is_stable && voc_index > 0) {
+			sgp40_is_stable = true;
+		}
+
+		/* --- Full Report: Read all other sensors and print every 10 seconds --- */
+		if (loop_counter % 10 == 0) {
+			int64_t uptime_s = k_uptime_get() / 1000;
+
+			/* TSL2591 Data */
+			struct sensor_value lux, ir;
+			sensor_sample_fetch(tsl2591_dev);
+			sensor_channel_get(tsl2591_dev, SENSOR_CHAN_LIGHT, &lux);
+			sensor_channel_get(tsl2591_dev, SENSOR_CHAN_IR, &ir);
+
+			/* APDS9960 Data */
+			struct sensor_value light, prox, r, g, b;
+			sensor_sample_fetch(apds9960_dev);
+			sensor_channel_get(apds9960_dev, SENSOR_CHAN_LIGHT, &light);
+			sensor_channel_get(apds9960_dev, SENSOR_CHAN_PROX, &prox);
+			sensor_channel_get(apds9960_dev, SENSOR_CHAN_RED, &r);
+			sensor_channel_get(apds9960_dev, SENSOR_CHAN_GREEN, &g);
+			sensor_channel_get(apds9960_dev, SENSOR_CHAN_BLUE, &b);
+
+			/* HTU21D Data */
+			struct sensor_value htu_temp, htu_hum;
+			sensor_sample_fetch(htu21d_dev);
+			sensor_channel_get(htu21d_dev, SENSOR_CHAN_AMBIENT_TEMP, &htu_temp);
+			sensor_channel_get(htu21d_dev, SENSOR_CHAN_HUMIDITY, &htu_hum);
+
+			/* SCD4x Data */
+			struct sensor_value co2, scd_temp, scd_hum;
+			sensor_sample_fetch(scd4x_dev);
+			sensor_channel_get(scd4x_dev, SENSOR_CHAN_CO2, &co2);
+			sensor_channel_get(scd4x_dev, SENSOR_CHAN_AMBIENT_TEMP, &scd_temp);
+			sensor_channel_get(scd4x_dev, SENSOR_CHAN_HUMIDITY, &scd_hum);
+
+			/* --- Print the formatted output block --- */
+			printk("\n--- Sensor Readout at %lld seconds ---\n", uptime_s);
+			printk("  [Environment]\n");
+			printk("    SCD4x -> CO2: %4d ppm | Temp: %5.2f C | Humidity: %5.2f %%\n",
+				   co2.val1, sensor_value_to_double(&scd_temp), sensor_value_to_double(&scd_hum));
+			printk("    HTU21D-> Temp: %5.2f C | Humidity: %5.2f %%\n",
+				   sensor_value_to_double(&htu_temp), sensor_value_to_double(&htu_hum));
+
+			printk("  [Air Quality]\n");
+			printk("    SGP40 -> VOC Index: %3d (Raw: %5d) [Status: %s]\n",
+				   voc_index, raw_voc.val1, (sgp40_is_stable ? "Stable" : "Warming Up"));
+			
+			printk("  [Light & Proximity]\n");
+			printk("    TSL2591-> Ambient Light: %6.2f Lux (IR: %d)\n",
+				   sensor_value_to_double(&lux), ir.val1);
+			printk("    APDS9960-> Proximity: %3d/255 | Light: %4d | Color (R,G,B): (%d,%d,%d)\n",
+				   prox.val1, light.val1, r.val1, g.val1, b.val1);
+		}
+
+		loop_counter++;
+		k_sleep(K_SECONDS(1)); // Main loop runs every 1 second
+	}
 }
