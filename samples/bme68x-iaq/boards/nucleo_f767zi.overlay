@@ -1,24 +1,29 @@
 /*
- * ===================================================================
- * nucleo_f767zi.overlay - I2C Configuration for BME680
- * ===================================================================
- * This overlay enables I2C1 for the BME680 sensor on the Nucleo-F767ZI board.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Example DTS overlay with a single BME680/688 device
+ * connected to I2C and a flash partition dedicated
+ * to BSEC state persistence.
+ *
+ * This overlay is for the nucleo_f767zi board.
+ *
+ * Also shows explicit I2C1 config and assignment of both BME680 (0x77)
+ * and BME68x Sensor API (0x76) addresses/presentations.
  */
 
-/* Enable I2C1 for BME680 */
 &i2c1 {
     status = "okay";
     clock-frequency = <100000>; /* 100 kHz */
     pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
     pinctrl-names = "default";
 
-    bme680: bme680@77 {
+    bme680@77 {
         compatible = "bosch,bme680";
         reg = <0x77>;
         label = "BME680";
     };
 
-    bme68x: bme68x@76 {
+    bme68x@76 {
         compatible = "bosch,bme68x-sensor-api";
         reg = <0x76>;
         label = "BME68X";

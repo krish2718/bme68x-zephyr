@@ -16,4 +16,6 @@ target_sources(app PRIVATE
   src/main.c
 )
 
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/bme68x-sensor-api/include)
+
 target_compile_options(app PRIVATE -Wall -Werror)
