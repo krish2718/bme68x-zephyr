@@ -46,8 +46,10 @@ static const char *stab2str(enum bme68x_iaq_status s)
 	}
 }
 
+#if 0
 /* Callback invoked by IAQ run-loop each time BSEC produces outputs */
-static void iaq_output_handler(const struct bme68x_iaq_sample *s)
+/* Floating-point print variant */
+static void iaq_output_handler_flt(const struct bme68x_iaq_sample *s)
 {
 	/* Raw signals are already “physical units” as floats from the library */
 	LOG_INF("T=%.2f C  H=%.2f %%  P=%.2f hPa  Gas=%.0f ohm | IAQ=%.1f (%s) | CO2eq=%.0f ppm (%s) | VOC=%.2f ppm (%s) | stab=%s run=%s",
@@ -64,6 +66,26 @@ static void iaq_output_handler(const struct bme68x_iaq_sample *s)
 		stab2str(s->stab_status),
 		stab2str(s->run_status));
 }
+#else
+/* Integer print variant (fixed-point scaled or rounded as appropriate) */
+static void iaq_output_handler_int(const struct bme68x_iaq_sample *s)
+{
+	LOG_INF("T=%d.%02d C  H=%d.%02d %%  P=%d.%02d hPa  Gas=%ld ohm | IAQ=%d.%01d (%s) | CO2eq=%ld ppm (%s) | VOC=%d.%02d ppm (%s) | stab=%s run=%s",
+		(int)s->temperature, (int)((s->temperature - (int)s->temperature) * 100),
+		(int)s->humidity, (int)((s->humidity - (int)s->humidity) * 100),
+		(int)s->raw_pressure, (int)((s->raw_pressure - (int)s->raw_pressure) * 100),
+		(long)s->raw_gas_res,
+		(int)s->iaq, (int)((s->iaq - (int)s->iaq) * 10),
+		accuracy2str(s->iaq_accuracy),
+		(long)s->co2_equivalent,
+		accuracy2str(s->co2_accuracy),
+		(int)s->voc_equivalent, (int)((s->voc_equivalent - (int)s->voc_equivalent) * 100),
+		accuracy2str(s->voc_accuracy),
+		stab2str(s->stab_status),
+		stab2str(s->run_status));
+}
+#endif
+
 
 int main(void)
 {
@@ -124,7 +146,8 @@ int main(void)
 	while (true) {
 		ret = bme68x_iaq_sample(&bme, &sample);
 		if (ret == 0) {
-			iaq_output_handler(&sample);
+			// TODO: Float causes -134 in the lib, use only int for now
+			iaq_output_handler_int(&sample);
 		} else if (ret != -EAGAIN) {
 			LOG_ERR("IAQ sample failed: %d", ret);
 			break;
