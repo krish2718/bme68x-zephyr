@@ -17,15 +17,9 @@
     pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
     pinctrl-names = "default";
 
-    bme680@77 {
-        compatible = "bosch,bme680";
-        reg = <0x77>;
-        label = "BME680";
-    };
-
-    bme68x@76 {
+    bme68x@77 {
         compatible = "bosch,bme68x-sensor-api";
-        reg = <0x76>;
+        reg = <0x77>;
         label = "BME68X";
     };
 };
