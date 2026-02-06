@@ -6,6 +6,7 @@
 
 #include "bme68x_iaq.h"
 
+#include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -393,6 +394,48 @@ void bme68x_iaq_run(struct bme68x_dev *dev, bme68x_iaq_output_cb iaq_output_hand
 #ifdef CONFIG_BME68X_IAQ_SETTINGS
 	k_timer_stop(&iaq_state_save_timer);
 #endif
+}
+
+int bme68x_iaq_sample(struct bme68x_dev *dev, struct bme68x_iaq_sample *sample)
+{
+	bsec_bme_settings_t sensor_settings = {0};
+	int ret;
+
+	if (dev == NULL || sample == NULL) {
+		return -EINVAL;
+	}
+
+	dev->amb_temp = BME68X_IAQ_AMBIENT_TEMP;
+
+	int64_t ts_ns = iaq_uptime_ns();
+	ret = bsec_sensor_control(ts_ns, &sensor_settings);
+	if (ret < 0) {
+		LOG_ERR("BSEC control error: %d", ret);
+		return ret;
+	}
+	if (ret > 0) {
+		LOG_WRN("BSEC control status: %d", ret);
+	}
+	if (!sensor_settings.trigger_measurement) {
+		return -EAGAIN;
+	}
+
+	ret = iaq_bsec_trigger_measurement(&sensor_settings, dev);
+	if (ret) {
+		return (ret < 0) ? ret : -EIO;
+	}
+
+	uint32_t tphg_us = iaq_get_tphg_meas_dur(&sensor_settings);
+	LOG_DBG("TPHG wait: %u us ...", tphg_us);
+	k_sleep(K_USEC(tphg_us));
+
+	ret = iaq_next_sample(&sensor_settings, ts_ns, dev, sample);
+	if (ret) {
+		return (ret < 0) ? ret : -EIO;
+	}
+
+	dev->amb_temp = (int8_t)sample->temperature;
+	return 0;
 }
 
 bsec_library_return_t iaq_bsec_configure(void)

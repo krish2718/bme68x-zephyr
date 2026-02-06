@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Chris Duf
+ * Copyright (c) 2025, Chris Duf
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -130,6 +130,25 @@ int bme68x_iaq_init(void);
  * @param iaq_output_handler Synchronous callback that will consume the produced IAQ outputs.
  */
 void bme68x_iaq_run(struct bme68x_dev *dev, bme68x_iaq_output_cb iaq_output_handler);
+
+/**
+ * @brief Perform a single IAQ measurement.
+ *
+ * Runs one iteration of the BSEC control loop: asks BSEC for sensor settings,
+ * triggers one TPHG measurement on the BME68X, waits for completion, then
+ * processes the data and fills the output sample. Call bme68x_iaq_init() once
+ * before using this API.
+ *
+ * @param dev The controlled BME68X sensor.
+ * @param sample Output buffer for the IAQ sample. Must not be NULL.
+ *
+ * @return 0 on success.
+ * @return -EINVAL if dev or sample is NULL.
+ * @return -EAGAIN if BSEC did not request a measurement this time; call again
+ *         after the recommended interval (e.g. sample period).
+ * @return Negative BSEC/BME68X status or -EIO on other errors.
+ */
+int bme68x_iaq_sample(struct bme68x_dev *dev, struct bme68x_iaq_sample *sample);
 
 #ifdef __cplusplus
 }
