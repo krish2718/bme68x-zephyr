@@ -13,8 +13,10 @@
 #include "bme68x_ess.h"
 #include "bme68x_iaq.h"
 
+#include <errno.h>
 #include <stdint.h>
 
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #ifdef CONFIG_SETTINGS
 #include <zephyr/settings/settings.h>
@@ -89,8 +91,24 @@ int main(void)
 		return 0;
 	}
 
-	/* Start updating ESS Characteristics with BSEC algorithm output. */
-	bme68x_iaq_run(&bme68x_dev, iaq_output_handler);
+	/* Update ESS Characteristics with BSEC algorithm output (single-shot in loop). */
+	struct bme68x_iaq_sample sample;
+#if defined(CONFIG_BME68X_IAQ_SAMPLE_RATE_ULP)
+	k_timeout_t period = K_SECONDS(300);
+#else
+	k_timeout_t period = K_SECONDS(3);
+#endif
+
+	while (true) {
+		ret = bme68x_iaq_sample(&bme68x_dev, &sample);
+		if (ret == 0) {
+			iaq_output_handler(&sample);
+		} else if (ret != -EAGAIN) {
+			LOG_ERR("IAQ sample failed: %d", ret);
+			break;
+		}
+		k_sleep(period);
+	}
 
 	return 0;
 }

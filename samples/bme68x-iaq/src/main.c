@@ -3,6 +3,8 @@
  * Target: NUCLEO-F767ZI
  */
 
+#include <errno.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -110,12 +112,25 @@ int main(void)
 		return 0;
 	}
 
-	LOG_INF("Init OK. Entering IAQ run loop...");
+	LOG_INF("Init OK. Entering IAQ sample loop...");
 
-	/* This function typically never returns (internal loop) */
-	bme68x_iaq_run(&bme, iaq_output_handler);
+	struct bme68x_iaq_sample sample;
+#if defined(CONFIG_BME68X_IAQ_SAMPLE_RATE_ULP)
+	k_timeout_t period = K_SECONDS(300);
+#else
+	k_timeout_t period = K_SECONDS(3);
+#endif
 
-	/* Should not reach here */
-	LOG_WRN("bme68x_iaq_run returned unexpectedly");
+	while (true) {
+		ret = bme68x_iaq_sample(&bme, &sample);
+		if (ret == 0) {
+			iaq_output_handler(&sample);
+		} else if (ret != -EAGAIN) {
+			LOG_ERR("IAQ sample failed: %d", ret);
+			break;
+		}
+		k_sleep(period);
+	}
+
 	return 0;
 }
